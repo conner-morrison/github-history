@@ -182,7 +182,7 @@ def main():
     add_cmd.add_argument("--name")
     add_cmd.add_argument("--username")
     add_cmd.add_argument("--email")
-    add_cmd.add_argument("--id", type=int)
+    add_cmd.add_argument("--id", help="relay worker id (any string)")
     switch_cmd = sub.add_parser("switch", help="use a saved account")
     switch_cmd.add_argument("username")
     remove_cmd = sub.add_parser("remove", help="forget a saved account")

@@ -125,8 +125,8 @@
       <div class="row">
         <div><label for="a_name">Name</label>
              <input type="text" id="a_name" placeholder="Conner Morrison" autocomplete="off"></div>
-        <div><label for="a_id">ID</label>
-             <input type="text" id="a_id" placeholder="read from the token" autocomplete="off"></div>
+        <div><label for="a_id">ID (relay worker id)</label>
+             <input type="text" id="a_id" placeholder="the worker id the relay registers" autocomplete="off"></div>
       </div>
       <div class="row">
         <div><label for="a_username">GitHub username</label>
@@ -454,7 +454,7 @@ $("cancelaccount").onclick = () => {
 $("saveaccount").onclick = () => {
   const btn = $("saveaccount");
   const payload = {
-    name: $("a_name").value, id: Number($("a_id").value) || null,
+    name: $("a_name").value, id: $("a_id").value.trim() || null,
     username: $("a_username").value, email: $("a_email").value, token: $("a_token").value,
   };
   const route = editing ? "/api/accounts/update" : "/api/accounts/save";
