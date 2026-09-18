@@ -1,0 +1,646 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>github history</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f7f9; --card: #fff; --ink: #14171a; --muted: #5b6570;
+    --line: #dfe3e8; --accent: #2b6cb0; --ok: #1f7a4d; --warn: #9a5b00; --bad: #b42318;
+    --logbg: #0f1419; --logink: #d6dde5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1317; --card:#171c22; --ink:#e6eaee; --muted:#9aa5b1;
+            --line:#2a323b; --accent:#6aa9e9; --ok:#4cc38a; --warn:#d99a2b; --bad:#f07167;
+            --logbg:#0a0d11; --logink:#c8d2dc; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+         font:14px/1.5 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:20px; margin:0 0 4px; letter-spacing:-0.01em; }
+  .sub { color:var(--muted); margin:0 0 20px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:16px; margin-bottom:16px; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+             color:var(--muted); margin:0 0 12px; font-weight:600; }
+  label { display:block; font-size:12px; color:var(--muted); margin:10px 0 4px; }
+  input[type=text] { width:100%; padding:9px 11px; border:1px solid var(--line);
+    border-radius:8px; background:var(--bg); color:var(--ink); font-size:14px; font-family:inherit; }
+  input[type=text]:focus { outline:2px solid var(--accent); outline-offset:-1px; border-color:transparent; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .row > * { flex:1 1 220px; min-width:0; }
+  .checks { display:flex; gap:18px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+  .checks label { display:flex; gap:7px; align-items:center; margin:0; font-size:13px; color:var(--ink); }
+  button { font:inherit; font-weight:500; padding:9px 16px; border-radius:8px;
+           border:1px solid var(--line); background:var(--card); color:var(--ink); cursor:pointer; }
+  button:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+  button:disabled { opacity:.42; cursor:not-allowed; }
+  button.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
+  button.primary:hover:not(:disabled) { color:#fff; filter:brightness(1.08); }
+  button.danger:hover:not(:disabled) { border-color:var(--bad); color:var(--bad); }
+  .controls { display:flex; gap:8px; flex-wrap:wrap; margin-top:4px; }
+  .bar { height:9px; border-radius:99px; background:var(--line); overflow:hidden; margin:6px 0 10px; }
+  .bar > i { display:block; height:100%; width:0; border-radius:99px; background:var(--accent);
+             transition:width .3s ease; }
+  .statline { display:flex; justify-content:space-between; gap:12px; align-items:baseline; }
+  .phase { font-weight:600; }
+  .pct { font-variant-numeric:tabular-nums; color:var(--muted); }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:99px; background:var(--muted);
+         margin-right:7px; vertical-align:1px; }
+  .s-running .dot { background:var(--accent); animation:pulse 1.1s ease-in-out infinite; }
+  .s-paused  .dot { background:var(--warn); }
+  .s-done    .dot { background:var(--ok); }
+  .s-error   .dot, .s-stopped .dot { background:var(--bad); }
+  @keyframes pulse { 50% { opacity:.3; } }
+  pre.log { background:var(--logbg); color:var(--logink); border-radius:8px; padding:12px;
+            margin:0; height:230px; overflow:auto; font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;
+            white-space:pre-wrap; word-break:break-word; }
+  .who { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:space-between; }
+  .code { font:600 20px/1 ui-monospace,Menlo,monospace; letter-spacing:.14em; padding:8px 12px;
+          border:1px dashed var(--line); border-radius:8px; display:inline-block; }
+  a { color:var(--accent); }
+  .hint { color:var(--muted); font-size:12px; margin-top:8px; }
+  .result { border-left:3px solid var(--ok); padding-left:12px; }
+  table.hist { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
+  table.hist th { text-align:left; font-weight:500; color:var(--muted); font-size:11px;
+                  text-transform:uppercase; letter-spacing:.06em; padding:6px 8px 6px 0;
+                  border-bottom:1px solid var(--line); }
+  table.hist td { padding:9px 8px 9px 0; border-bottom:1px solid var(--line);
+                  vertical-align:middle; }
+  table.hist tr:last-child td { border-bottom:0; }
+  table.hist td.act { text-align:right; white-space:nowrap; }
+  table.hist button { padding:5px 10px; font-size:12px; }
+  .pill { font-size:11px; padding:2px 8px; border-radius:99px; border:1px solid var(--line);
+          color:var(--muted); white-space:nowrap; }
+  .pill.live { color:var(--ok); border-color:currentColor; }
+  .pill.expired { color:var(--bad); border-color:currentColor; }
+  .pill.kept { color:var(--accent); border-color:currentColor; }
+  .pill.deleted { opacity:.6; }
+  .empty { color:var(--muted); padding:14px 0; }
+  .subhead { display:flex; align-items:center; justify-content:space-between; gap:12px;
+             flex-wrap:wrap; margin-bottom:8px; }
+  .subhead > span { font-size:12px; text-transform:uppercase; letter-spacing:.07em;
+                    color:var(--muted); font-weight:600; }
+  hr.rule { border:0; border-top:1px solid var(--line); margin:16px 0 4px; }
+  .acct { display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+          padding:9px 0; border-bottom:1px solid var(--line); }
+  .acct:last-child { border-bottom:0; }
+  .acct .who2 { flex:1 1 220px; min-width:0; }
+  .acct .who2 b { font-weight:600; }
+  .acct .meta { color:var(--muted); font-size:12px; }
+  #accountlist:empty { display:none; }
+  #addform { margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+  code { font:12px ui-monospace,Menlo,monospace; background:var(--bg); padding:1px 4px;
+         border-radius:4px; }
+  .verify { margin-top:12px; border:1px solid var(--line); border-radius:8px; padding:10px 12px; }
+  .verify div { display:flex; gap:9px; align-items:flex-start; padding:3px 0; font-size:13px; }
+  .verify b { flex:0 0 52px; color:var(--muted); font-weight:500; }
+  .verify .m-ok    { color:var(--ok); }
+  .verify .m-bad   { color:var(--bad); }
+  .verify .m-warn  { color:var(--warn); }
+  .verify .m-mute  { color:var(--muted); }
+  .result.err { border-left-color:var(--bad); }
+</style>
+
+<div class="wrap">
+  <h1>github history</h1>
+  <p class="sub">Clone a repository, rewrite its contributors, publish it under a new name.</p>
+
+  <div class="card">
+    <h2>GitHub account</h2>
+    <div class="who">
+      <div id="who">checking ...</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="grantdelete" hidden>Allow deleting repos</button>
+        <button id="signin">Sign in with browser</button>
+      </div>
+    </div>
+    <div id="accountlist"></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      <button id="addaccount">Add account</button>
+    </div>
+    <div id="addform" hidden>
+      <div class="row">
+        <div><label for="a_name">Name</label>
+             <input type="text" id="a_name" placeholder="Conner Morrison" autocomplete="off"></div>
+        <div><label for="a_id">ID</label>
+             <input type="text" id="a_id" placeholder="read from the token" autocomplete="off"></div>
+      </div>
+      <div class="row">
+        <div><label for="a_username">GitHub username</label>
+             <input type="text" id="a_username" placeholder="conner-morrison" autocomplete="off"></div>
+        <div><label for="a_email">GitHub email</label>
+             <input type="text" id="a_email" placeholder="you@example.com" autocomplete="off"></div>
+      </div>
+      <label for="a_token">Token</label>
+      <input type="password" id="a_token" placeholder="ghp_... or gho_..." autocomplete="off">
+      <p class="hint" id="a_tokenhint" hidden>Leave blank to keep the saved token.</p>
+      <p class="hint">Checked against GitHub before saving. Stored on this machine only, in
+        <code>accounts.json</code> (0600, gitignored), and never sent back to this page.
+        Blank name, id or email are filled in from the token.</p>
+      <div class="controls">
+        <button class="primary" id="saveaccount">Save account</button>
+        <button id="cancelaccount">Cancel</button>
+      </div>
+      <p class="hint m-bad" id="accounterror" hidden></p>
+    </div>
+
+    <div id="authbox" hidden>
+      <p class="hint">Copy this code, then open the link and paste it:</p>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <span class="code" id="authcode">----</span>
+        <a id="authurl" href="https://github.com/login/device" target="_blank" rel="noopener">Open github.com/login/device</a>
+        <button class="danger" id="cancelauth">Cancel</button>
+      </div>
+      <p class="hint" id="authmsg"></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="who" style="margin-bottom:0">
+      <h2 style="margin:0">Server</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button id="connectserver">Connect server</button>
+        <button id="checkapproval" hidden>Check now</button>
+        <button id="disconnectserver" hidden>Disconnect</button>
+      </div>
+    </div>
+    <div id="serverstate" class="hint" style="margin-top:8px">Not connected.</div>
+    <div id="serverform" hidden style="margin-top:10px">
+      <label for="serverurl">Workspace URL</label>
+      <input type="text" id="serverurl" placeholder="https://relay.example.com/upwork" autocomplete="off">
+      <div class="row">
+        <div><label for="workerid">Worker id</label>
+             <input type="text" id="workerid" readonly></div>
+        <div><label for="workertoken">Token</label>
+             <input type="text" id="workertoken" readonly></div>
+      </div>
+      <p class="hint" id="workerhint">Include the workspace in the URL. Connecting enrols this
+        worker (<code>POST /&lt;workspace&gt;/enrol</code>); it stays pending until someone
+        approves it in the relay console.</p>
+      <div class="controls">
+        <button class="primary" id="doconnect">Connect</button>
+        <button id="cancelconnect">Cancel</button>
+      </div>
+      <p class="hint m-bad" id="servererror" hidden></p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Run</h2>
+    <div class="subhead">
+      <span>Queue from server</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <label style="display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted)">
+          <input type="checkbox" id="q_enabled"> Listening</label>
+        <button id="q_fold">Fold</button>
+        <button id="q_clear">Clear finished</button>
+      </div>
+    </div>
+    <div id="queuestate" class="hint"></div>
+    <div id="queuebody">
+      <table class="hist" id="queuetable"></table>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input type="text" id="q_url" placeholder="add a URL by hand" autocomplete="off" style="flex:1">
+        <button id="q_add">Add</button>
+      </div>
+    </div>
+    <hr class="rule">
+
+    <label for="url">Original GitHub URL</label>
+    <input type="text" id="url" placeholder="https://github.com/owner/repo" autocomplete="off">
+    <label for="username">GitHub username to credit</label>
+    <input type="text" id="username" readonly placeholder="no account selected">
+    <p class="hint" id="usernamehint">The account currently in use. Its name and address replace
+      every contributor in the history.</p>
+    <label for="name">New repository name <span style="text-transform:none">(blank = generated from the repo)</span></label>
+    <input type="text" id="name" placeholder="auto" autocomplete="off">
+    <div class="controls" style="margin-top:14px">
+      <button id="verify">Check username</button>
+    </div>
+    <div id="verifybox" class="verify" hidden></div>
+    <div class="checks">
+      <label><input type="checkbox" id="public"> Publish public</label>
+      <label><input type="checkbox" id="dry_run" checked> Dry run (create nothing)</label>
+    </div>
+    <div class="controls" style="margin-top:16px">
+      <button class="primary" id="run">Run</button>
+      <button id="pause" disabled>Pause</button>
+      <button id="resume" disabled>Resume</button>
+      <button class="danger" id="stop" disabled>Stop</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="who" style="margin-bottom:0">
+      <h2 style="margin:0">Published repositories</h2>
+      <button id="showhistory">Show history</button>
+    </div>
+    <div id="historybox" hidden>
+      <div class="checks" style="margin:14px 0 4px">
+        <label style="color:var(--muted)">Delete automatically after
+          <input type="number" id="retention" min="0" max="3650" step="1"
+                 style="width:64px;margin:0 6px;padding:5px 7px;border:1px solid var(--line);
+                        border-radius:6px;background:var(--bg);color:var(--ink);font:inherit"> days
+        </label>
+        <button id="saveretention">Save</button>
+      </div>
+      <p class="hint" id="retentionhint">0 means delete on the next sweep. Pinned repositories are never swept.</p>
+      <p class="hint m-warn" id="scopewarn" hidden>Deleting is not permitted yet — use
+        <strong>Allow deleting repos</strong> above, and finish the browser step.</p>
+      <table class="hist" id="histtable"></table>
+    </div>
+  </div>
+
+
+  <div class="card">
+    <h2>Status</h2>
+    <div class="statline">
+      <span class="phase"><span class="dot"></span><span id="phase">idle</span></span>
+      <span class="pct" id="pct">0%</span>
+    </div>
+    <div class="bar"><i id="fill"></i></div>
+    <pre class="log" id="log"></pre>
+    <div id="result" hidden></div>
+  </div>
+</div>
+
+<script>
+const TOKEN = "__TOKEN__";
+const $ = id => document.getElementById(id);
+const api = (path, body) => fetch(path, {
+  method: body ? "POST" : "GET",
+  headers: {"X-Token": TOKEN, "Content-Type": "application/json"},
+  body: body ? JSON.stringify(body) : undefined,
+}).then(r => r.json());
+
+let pinned = true;
+let lastState = null;
+$("log").addEventListener("scroll", () => {
+  const el = $("log");
+  pinned = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+});
+
+$("signin").onclick = () => { $("signin").disabled = true; api("/api/auth/login", {}); };
+$("q_add").onclick = () => api("/api/queue/add", {url: $("q_url").value}).then(r => {
+  if (!r.ok) alert(r.error); else $("q_url").value = "";
+  loadQueue();
+});
+$("q_clear").onclick = () => api("/api/queue/clear", {}).then(loadQueue);
+$("q_enabled").onchange = () =>
+  api("/api/queue/settings", {enabled: $("q_enabled").checked}).then(loadQueue);
+
+let queueFolded = false;
+try { queueFolded = localStorage.getItem("queueFolded") === "1"; } catch {}
+function applyFold() {
+  $("queuebody").hidden = queueFolded;
+  $("q_fold").textContent = queueFolded ? "Unfold" : "Fold";
+}
+$("q_fold").onclick = () => {
+  queueFolded = !queueFolded;
+  try { localStorage.setItem("queueFolded", queueFolded ? "1" : "0"); } catch {}
+  applyFold();
+};
+applyFold();
+
+const QSTATE = {queued:"live", running:"kept", done:"live", failed:"expired"};
+
+function loadQueue() {
+  api("/api/queue").then(q => {
+    const cfg = q.settings || {};
+    if (document.activeElement !== $("q_enabled")) $("q_enabled").checked = !!cfg.enabled;
+    const counts = q.counts || {};
+    const bits = ["queued","running","done","failed"]
+      .filter(k => counts[k]).map(k => `${counts[k]} ${k}`);
+    $("queuestate").innerHTML =
+      `${q.listening ? '<span class="m-ok">Listening</span>' : '<span class="m-mute">Not listening</span>'}
+       on channel <b>${cfg.channel || "github"}</b>
+       ${bits.length ? "· " + bits.join(" · ") : "· nothing queued"}
+       ${q.current ? "<br><span class=\"m-warn\">Running</span> " + q.current : ""}
+       ${q.last_error ? '<br><span class="m-bad">' + q.last_error + "</span>" : ""}
+       ${q.last_done ? "<br><span class=\"m-mute\">last report: " + q.last_done.completed
+          + " done, " + q.last_done.failed + " failed at " + fmt(q.last_done.at) + "</span>" : ""}`;
+
+    const items = (q.items || []).slice().reverse();
+    if (!items.length) { $("queuetable").innerHTML = ""; return; }
+    $("queuetable").innerHTML =
+      `<tr><th>Repository</th><th>State</th><th>Result</th><th></th></tr>` +
+      items.map(i => `<tr>
+        <td><a href="${i.url}" target="_blank" rel="noopener">${i.url.replace("https://github.com/","")}</a>
+            ${i.source ? `<span class="meta"> · ${i.source}</span>` : ""}</td>
+        <td><span class="pill ${QSTATE[i.status] || ""}">${i.status}</span></td>
+        <td class="m-mute">${i.result && i.result.url
+             ? `<a href="${i.result.url}" target="_blank" rel="noopener">${i.result.name}</a>`
+             : (i.error ? `<span class="m-bad">${i.error}</span>` : "")}</td>
+        <td class="act">${i.status === "queued"
+             ? `<button data-drop="${i.url}">Remove</button>` : ""}</td></tr>`).join("");
+    $("queuetable").querySelectorAll("[data-drop]").forEach(btn => btn.onclick = () =>
+      api("/api/queue/remove", {url: btn.dataset.drop}).then(loadQueue));
+  });
+}
+loadQueue();
+setInterval(loadQueue, 2000);
+
+$("connectserver").onclick = () => {
+  $("serverform").hidden = !$("serverform").hidden;
+  $("servererror").hidden = true;
+  if (!$("serverform").hidden) $("serverurl").focus();
+};
+$("cancelconnect").onclick = () => { $("serverform").hidden = true; $("servererror").hidden = true; };
+$("checkapproval").onclick = () => {
+  $("checkapproval").disabled = true;
+  api("/api/server/refresh", {}).then(r => {
+    if (!r.ok) { $("servererror").hidden = false; $("servererror").textContent = r.error; }
+    loadServer();
+  }).finally(() => { $("checkapproval").disabled = false; });
+};
+$("doconnect").onclick = () => {
+  const btn = $("doconnect");
+  btn.disabled = true; btn.textContent = "Enrolling ...";
+  api("/api/server/connect", {url: $("serverurl").value}).then(r => {
+    if (!r.ok) { $("servererror").hidden = false; $("servererror").textContent = r.error; return; }
+    $("serverform").hidden = true; $("servererror").hidden = true;
+    loadServer();
+  }).finally(() => { btn.disabled = false; btn.textContent = "Connect"; });
+};
+$("disconnectserver").onclick = () => {
+  if (!confirm("Disconnect from the server?")) return;
+  api("/api/server/disconnect", {}).then(loadServer);
+};
+
+function applyWorker(worker) {
+  const have = !!worker;
+  $("workerid").value = have ? worker.username : "";
+  $("workertoken").value = have ? worker.token_hint : "";
+  $("username").value = have ? worker.username : "";
+  $("doconnect").disabled = !have;
+  $("workerhint").innerHTML = have
+    ? `Enrols as <b>${worker.username}</b> with that account's saved token (shown masked;
+       the token itself is sent from this machine, not from this page).`
+    : `<span class="m-bad">Worker is not selected.</span> Choose an account above with
+       <b>Use</b> first.`;
+  $("usernamehint").innerHTML = have
+    ? `The account currently in use. Its name and address replace every contributor in the history.`
+    : `<span class="m-bad">No account selected.</span> Choose one above with <b>Use</b>.`;
+}
+
+function loadServer() {
+  api("/api/server").then(st => {
+    applyWorker(st.worker);
+    const busy = st.pending || st.connected;
+    $("disconnectserver").hidden = !busy;
+    $("checkapproval").hidden = !st.pending;
+    $("connectserver").textContent = busy ? "Change workspace" : "Connect server";
+    if (st.url && !$("serverurl").value) $("serverurl").value = st.url;
+
+    if (st.status === "pending") {
+      $("serverstate").innerHTML =
+        `<span class="m-warn">Waiting for approval</span> — worker <b>${st.worker_id}</b>
+         is pending in <b>${st.workspace}</b> at ${st.url}<br>
+         <span class="m-mute">enrolled ${fmt(st.enrolled_at)}${st.checked_at ? " · last checked " + fmt(st.checked_at) : ""}
+         ${st.detail ? " · " + st.detail : ""}</span><br>
+         <span class="m-mute">Approve <b>${st.worker_id}</b> in the relay console; this updates by itself.</span>`;
+    } else if (st.status === "connected") {
+      $("serverstate").innerHTML =
+        `<span class="m-ok">Connected</span> as <b>${st.worker_id}</b> to <b>${st.workspace}</b>
+         at ${st.url}<br><span class="m-mute">approved ${fmt(st.approved_at)}</span>`;
+    } else {
+      $("serverstate").innerHTML =
+        `Not connected. <span class="m-mute">This client is ${st.client_id || "unidentified"}.</span>`;
+    }
+  });
+}
+const fmt = t => (t || "").replace("T", " ").replace("Z", "");
+loadServer();
+setInterval(loadServer, 2500);
+
+$("cancelauth").onclick = () => {
+  $("cancelauth").disabled = true;
+  api("/api/auth/cancel", {}).then(r => { if (!r.ok) alert(r.error); });
+};
+
+let editing = null;   // username being edited, or null when adding
+
+function accountForm(account) {
+  editing = account ? account.username : null;
+  $("a_name").value = account ? account.name : "";
+  $("a_id").value = account ? (account.id || "") : "";
+  $("a_username").value = account ? account.username : "";
+  $("a_email").value = account ? account.email : "";
+  $("a_token").value = "";
+  $("a_token").placeholder = account ? `saved: ${account.token_hint}` : "ghp_... or gho_...";
+  $("a_tokenhint").hidden = !account;
+  $("saveaccount").textContent = account ? "Save changes" : "Save account";
+  $("addaccount").textContent = "Add account";
+  $("addform").hidden = false;
+  $("accounterror").hidden = true;
+  $("a_name").focus();
+}
+
+$("addaccount").onclick = () => {
+  if ($("addform").hidden || editing) accountForm(null);
+  else $("addform").hidden = true;
+};
+$("cancelaccount").onclick = () => {
+  $("addform").hidden = true; $("accounterror").hidden = true; editing = null;
+};
+$("saveaccount").onclick = () => {
+  const btn = $("saveaccount");
+  const payload = {
+    name: $("a_name").value, id: Number($("a_id").value) || null,
+    username: $("a_username").value, email: $("a_email").value, token: $("a_token").value,
+  };
+  const route = editing ? "/api/accounts/update" : "/api/accounts/save";
+  if (editing) payload.original = editing;
+  btn.disabled = true;
+  api(route, payload).then(r => {
+    if (!r.ok) { $("accounterror").hidden = false; $("accounterror").textContent = r.error; return; }
+    ["a_name","a_id","a_username","a_email","a_token"].forEach(id => $(id).value = "");
+    $("addform").hidden = true; $("accounterror").hidden = true; editing = null;
+    loadAccounts();
+  }).finally(() => { btn.disabled = false; });
+};
+
+function loadAccounts() {
+  api("/api/accounts").then(state => {
+    const rows = state.accounts;
+    $("accountlist").innerHTML = rows.map(a => {
+      const current = a.username === state.active;
+      return `<div class="acct">
+        <div class="who2" data-open="${a.username}" title="Click to see and edit this profile"
+             style="cursor:pointer">
+          <b>${a.name}</b> <span class="meta">${a.username} · ${a.email}</span><br>
+          <span class="meta">id ${a.id} · token ${a.token_hint}${current ? " · in use" : ""}</span></div>
+        <button data-use="${a.username}" ${current ? "disabled" : ""}>${current ? "In use" : "Use"}</button>
+        <button data-forget="${a.username}">Forget</button>
+      </div>`;
+    }).join("");
+
+    $("accountlist").querySelectorAll("[data-open]").forEach(row => row.onclick = () => {
+      accountForm(rows.find(a => a.username === row.dataset.open));
+    });
+    $("accountlist").querySelectorAll("[data-use]").forEach(btn => btn.onclick = (ev) => {
+      ev.stopPropagation();
+      btn.disabled = true; btn.textContent = "Switching ...";
+      api("/api/accounts/switch", {username: btn.dataset.use}).then(r => {
+        if (!r.ok) alert(r.error);
+        loadAccounts();
+        loadServer();
+      });
+    });
+    $("accountlist").querySelectorAll("[data-forget]").forEach(btn => btn.onclick = (ev) => {
+      ev.stopPropagation();
+      if (!confirm(`Forget the saved account ${btn.dataset.forget}? The token is removed from this machine.`)) return;
+      api("/api/accounts/remove", {username: btn.dataset.forget}).then(loadAccounts);
+    });
+  });
+}
+loadAccounts();
+
+$("grantdelete").onclick = () => {
+  $("grantdelete").disabled = true;
+  api("/api/auth/grant-delete", {});
+};
+$("run").onclick = () => api("/api/start", {
+  url: $("url").value, username: $("username").value,
+  name: $("name").value, public: $("public").checked, dry_run: $("dry_run").checked,
+}).then(r => { if (r.error) showVerify({ok: false, error: r.error}); });
+$("verify").onclick = () => {
+  const btn = $("verify");
+  btn.disabled = true; btn.textContent = "Checking ...";
+  api("/api/verify", {username: $("username").value})
+    .then(showVerify)
+    .finally(() => { btn.disabled = false; btn.textContent = "Check username"; });
+};
+
+function showVerify(result) {
+  const box = $("verifybox");
+  box.hidden = false;
+  box.innerHTML = result.ok
+    ? `<div><b>account</b><span class="m-ok">github.com/${result.login} exists (id ${result.id})</span></div>
+       <div><b>commits</b><span class="m-mute">will carry ${result.name} &lt;${result.email}&gt;</span></div>`
+    : `<div><b>error</b><span class="m-bad">${result.error}</span></div>`;
+}
+
+let historyOpen = false;
+$("showhistory").onclick = () => {
+  historyOpen = !historyOpen;
+  $("historybox").hidden = !historyOpen;
+  $("showhistory").textContent = historyOpen ? "Hide history" : "Show history";
+  if (historyOpen) loadHistory();
+};
+$("saveretention").onclick = () =>
+  api("/api/history/retention", {days: Number($("retention").value)})
+    .then(r => { if (!r.ok) alert(r.error); loadHistory(); });
+
+function loadHistory() {
+  api("/api/history").then(state => {
+    if (document.activeElement !== $("retention")) $("retention").value = state.retention_days;
+    const rows = state.repos;
+    if (!rows.length) {
+      $("histtable").innerHTML = `<tr><td class="empty">Nothing published yet. Runs with dry run on are not recorded.</td></tr>`;
+      return;
+    }
+    $("histtable").innerHTML =
+      `<tr><th>Repository</th><th>Published</th><th>Status</th><th></th></tr>` +
+      rows.map(r => {
+        const left = r.days_left === null ? "" :
+          (r.days_left > 0 ? `${r.days_left.toFixed(1)}d left` : "due");
+        const acts = r.deleted_at ? "" :
+          `<button data-keep="${r.name}">${r.keep ? "Unpin" : "Pin"}</button>
+           <button class="danger" data-del="${r.name}">Delete</button>`;
+        return `<tr>
+          <td><a href="${r.url}" target="_blank" rel="noopener">${r.login}/${r.name}</a>
+              ${r.private ? '<span class="pill">private</span>' : ""}</td>
+          <td class="m-mute">${(r.created_at || "").replace("T", " ").replace("Z", "")}</td>
+          <td><span class="pill ${r.status}">${r.status}</span> <span class="m-mute">${left}</span></td>
+          <td class="act">${acts}</td></tr>`;
+      }).join("");
+
+    $("histtable").querySelectorAll("[data-del]").forEach(btn => btn.onclick = () => {
+      const name = btn.dataset.del;
+      if (!confirm(`Delete ${name} from GitHub and remove its local clone? This cannot be undone.`)) return;
+      btn.disabled = true;
+      api("/api/history/delete", {name}).then(r => {
+        if (!r.ok) alert(r.error);
+        loadHistory();
+      });
+    });
+    $("histtable").querySelectorAll("[data-keep]").forEach(btn => btn.onclick = () => {
+      const row = rows.find(x => x.name === btn.dataset.keep);
+      api("/api/history/keep", {name: btn.dataset.keep, keep: !row.keep}).then(loadHistory);
+    });
+  });
+}
+
+$("pause").onclick  = () => api("/api/pause", {});
+$("resume").onclick = () => api("/api/resume", {});
+$("stop").onclick   = () => { if (confirm("Stop this run?")) api("/api/stop", {}); };
+
+function render(data) {
+  const run = data.run, acct = data.account, auth = data.auth;
+
+  if (acct.logged_in) {
+    $("who").innerHTML = `Signed in as <strong>${acct.login}</strong>`;
+    $("signin").textContent = "Switch account";
+    $("signin").disabled = auth.state === "waiting";
+    $("grantdelete").hidden = acct.can_delete;
+    $("grantdelete").disabled = auth.state === "waiting";
+    $("scopewarn").hidden = acct.can_delete;
+  } else {
+    $("who").textContent = "Not signed in";
+  }
+
+  const waiting = auth.state === "waiting";
+  $("authbox").hidden = !waiting;
+  if (waiting) {
+    $("authcode").textContent = auth.code || "....";
+    if (auth.url) $("authurl").href = auth.url;
+    $("authmsg").textContent = auth.message || "";
+    $("cancelauth").disabled = false;
+  }
+  if (auth.state === "cancelled" && $("signin")) $("signin").disabled = false;
+
+  const st = run.state;
+  $("phase").textContent = run.error ? "error" : (run.phase || st);
+  $("pct").textContent = run.percent.toFixed(0) + "%";
+  $("fill").style.width = run.percent + "%";
+  document.querySelector(".statline").parentElement.className = "card s-" + st;
+
+  const busy = st === "running" || st === "paused";
+  $("run").disabled = busy;
+  $("pause").disabled = st !== "running";
+  $("resume").disabled = st !== "paused";
+  $("stop").disabled = !busy;
+  ["url","name","public","dry_run","verify"].forEach(id => $(id).disabled = busy);
+
+  const text = run.log.join("\n");
+  if ($("log").textContent !== text) {
+    $("log").textContent = text;
+    if (pinned) $("log").scrollTop = $("log").scrollHeight;
+  }
+
+  if (run.state === "done" && lastState !== "done" && historyOpen) loadHistory();
+  lastState = run.state;
+
+  const box = $("result");
+  if (run.result) {
+    const r = run.result;
+    box.hidden = false;
+    box.className = "result";
+    box.innerHTML = r.dry_run
+      ? `<p>Dry run complete. Would have published <strong>${r.name}</strong> (${r.private ? "private" : "public"}).</p>`
+      : `<p>Published <a href="${r.url}" target="_blank" rel="noopener">${r.url}</a> (${r.private ? "private" : "public"}).</p>`;
+  } else if (run.error) {
+    box.hidden = false;
+    box.className = "result err";
+    box.textContent = run.error;
+  } else {
+    box.hidden = true;
+  }
+}
+
+const poll = () => api("/api/status").then(render).catch(() => {}).finally(() => setTimeout(poll, 500));
+poll();
+</script>

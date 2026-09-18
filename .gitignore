@@ -1,0 +1,7 @@
+.env
+repos/
+__pycache__/
+history.json
+accounts.json
+server.json
+queue.json
