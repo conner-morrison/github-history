@@ -208,8 +208,8 @@ def active_worker():
 def server_state():
     """Current link state, re-asking the relay while approval is outstanding."""
     current = server_link.state()
-    if not current["pending"]:
-        return current
+    if current["status"] not in ("pending", "connected"):
+        return current   # nothing enrolled; no relay to ask
     if time.monotonic() - LAST_SERVER_CHECK[0] < SERVER_CHECK_EVERY:
         return current
     LAST_SERVER_CHECK[0] = time.monotonic()

@@ -211,18 +211,28 @@ def refresh(path=STORE):
     data = load(path)
     if not data.get("base") or not data.get("token"):
         return state(path)
-    if data.get("status") == "connected":
-        return state(path)
 
     result = request("GET",
                      f"{data['base']}/{quote(data['workspace'])}/messages?wait=0&limit=1",
                      token=data["token"])
     data["checked_at"] = _stamp()
 
-    if 200 <= result["status"] < 300:
+    body = result["json"] if isinstance(result["json"], dict) else {}
+    reported = body.get("worker_id")
+    mine = str(data.get("worker_id"))
+
+    if 200 <= result["status"] < 300 and (reported is None or str(reported) == mine):
+        # approved, and approved as the worker we enrolled
         data["status"] = "connected"
         data["approved_at"] = _stamp()
         data["detail"] = "approved"
+    elif 200 <= result["status"] < 300:
+        # the token works, but the relay knows it as a different worker - this
+        # token was approved under another id, so *this* id is not approved
+        data["status"] = "pending"
+        data["detail"] = (f"this token is approved as '{reported}', not '{mine}'. "
+                          f"Set the profile id to '{reported}', or use a token that "
+                          f"has not been approved under another id.")
     elif result["status"] in (401, 403, 404):
         # still sitting in the workspace's pending list
         data["status"] = "pending"
