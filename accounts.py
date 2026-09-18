@@ -1,16 +1,17 @@
 #!/usr/bin/env python3
-"""Saved GitHub accounts, so switching is one click.
+"""Saved profiles, so switching worker identity is one click.
 
-Each account holds a display name, the GitHub numeric id, a token, a username
-and an email. The token is a real credential: the store is written 0600, is
-gitignored, and is never handed to the browser - only a masked hint is.
+Each profile holds a display name, an id, a token, a GitHub username and email.
+The token is the relay worker password (worker id + token is what the relay
+approves), not a GitHub credential - it is never used to authenticate to GitHub.
+It is still a secret, so the store is written 0600, is gitignored, and is never
+handed to the browser: only a masked hint is.
 """
 
 import argparse
 import getpass
 import json
 import os
-import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -21,10 +22,6 @@ STORE = BASE_DIR / "accounts.json"
 
 class AccountError(Exception):
     """The account could not be saved, switched to, or found."""
-
-
-class RateLimited(AccountError):
-    """GitHub would not answer right now. It says nothing about the token."""
 
 
 def _empty():
@@ -67,54 +64,26 @@ def public(entry):
     return shown
 
 
-def check_token(token):
-    """Ask GitHub who a token belongs to. Returns {login, id, name, scopes}."""
-    if not (token or "").strip():
-        raise AccountError("no token given")
-
-    env = dict(os.environ, GH_TOKEN=token.strip())
-    env.pop("GITHUB_TOKEN", None)
-    probe = subprocess.run(["gh", "api", "user"], capture_output=True, text=True, env=env)
-    if probe.returncode != 0:
-        detail = (probe.stderr or "").strip().splitlines()
-        first = detail[0] if detail else "request failed"
-        if "401" in first or "Bad credentials" in first:
-            raise AccountError("GitHub rejected that token")
-        if "rate limit" in first.lower():
-            raise RateLimited("GitHub is rate limiting this token - try again shortly")
-        raise AccountError(f"could not check the token: {first}")
-
-    user = json.loads(probe.stdout)
-    scopes = subprocess.run(["gh", "auth", "status", "--hostname", "github.com"],
-                            capture_output=True, text=True, env=env)
-    text = (scopes.stderr or "") + (scopes.stdout or "")
-    found = []
-    for line in text.splitlines():
-        if "Token scopes:" in line:
-            found = [part.strip().strip("'") for part in line.split(":", 1)[1].split(",")]
-    return {"login": user.get("login"), "id": user.get("id"),
-            "name": user.get("name"), "scopes": [s for s in found if s]}
-
-
 def add(token, name=None, username=None, email=None, account_id=None, path=STORE):
-    """Save an account after confirming the token really belongs to it."""
-    who = check_token(token)
+    """Save an account. The token is stored as given, not checked against GitHub.
 
-    username = (username or "").strip() or who["login"]
-    if username.lower() != (who["login"] or "").lower():
-        raise AccountError(f"that token belongs to '{who['login']}', not '{username}'")
+    Because nothing is derived from the token, the username is required.
+    """
+    username = (username or "").strip()
+    if not username:
+        raise AccountError("a GitHub username is required")
+    if not (token or "").strip():
+        raise AccountError("a token is required")
 
-    account_id = account_id or who["id"]
-    name = (name or "").strip() or who["name"] or who["login"]
-    email = (email or "").strip() or f"{account_id}+{who['login']}@users.noreply.github.com"
-
+    noreply = (f"{account_id}+{username}@users.noreply.github.com" if account_id
+               else f"{username}@users.noreply.github.com")
     entry = {
-        "name": name,
+        "name": (name or "").strip() or username,
         "id": account_id,
-        "username": who["login"],
-        "email": email,
+        "username": username,
+        "email": (email or "").strip() or noreply,
         "token": token.strip(),
-        "scopes": who["scopes"],
+        "scopes": [],  # unknown without asking GitHub
         "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
@@ -134,20 +103,15 @@ def update(original, name=None, username=None, email=None, account_id=None,
         raise AccountError(f"no saved account named '{original}'")
 
     token = (token or "").strip() or existing["token"]
-    who = check_token(token)
-
     username = (username or "").strip() or existing["username"]
-    if username.lower() != (who["login"] or "").lower():
-        raise AccountError(f"that token belongs to '{who['login']}', not '{username}'")
 
     updated = dict(existing)
     updated.update({
         "name": (name or "").strip() or existing["name"],
-        "username": who["login"],
+        "username": username,
         "email": (email or "").strip() or existing["email"],
-        "id": account_id or existing["id"] or who["id"],
+        "id": account_id or existing["id"],
         "token": token,
-        "scopes": who["scopes"],
         "saved_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
@@ -188,34 +152,19 @@ def listing(path=STORE):
 
 
 def switch(username, path=STORE):
-    """Make a saved account the one gh uses, after re-checking its token."""
+    """Make a saved profile the active one.
+
+    This only selects the profile. Its token is the relay worker password, not a
+    GitHub credential, so nothing is handed to `gh` here: the account that
+    actually pushes is whoever is signed in through the browser. The active
+    profile supplies the relay worker id and token, and the name/email that
+    commits are rewritten to.
+    """
     entry = find(username, path)
     if entry is None:
-        raise AccountError(f"no saved account named '{username}'")
-
-    # re-check before replacing a working login, but a rate limit is not a
-    # verdict on the token: it was verified when it was saved
-    try:
-        who = check_token(entry["token"])
-        if (who["login"] or "").lower() != entry["username"].lower():
-            raise AccountError(f"the saved token now belongs to '{who['login']}'")
-    except RateLimited:
-        who = {"login": entry["username"], "scopes": entry.get("scopes", [])}
-
-    handoff = subprocess.run(["gh", "auth", "login", "--hostname", "github.com",
-                              "--with-token"], input=entry["token"],
-                             capture_output=True, text=True)
-    if handoff.returncode != 0:
-        detail = (handoff.stderr or "").strip().splitlines()
-        first = detail[0] if detail else "unknown error"
-        if "rate limit" in first.lower():
-            raise RateLimited("GitHub is rate limiting right now - try switching again shortly")
-        raise AccountError(f"gh refused the token: {first}")
+        raise AccountError(f"no saved profile named '{username}'")
 
     data = load(path)
-    for stored in data["accounts"]:
-        if stored["username"].lower() == entry["username"].lower():
-            stored["scopes"] = who["scopes"]
     data["active"] = entry["username"]
     save(data, path)
     return public(entry)

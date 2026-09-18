@@ -138,11 +138,16 @@ SERVER_CHECK_EVERY = 3.0
 
 
 def active_worker():
-    """The saved account currently in use, as the relay worker identity."""
+    """The active profile, as the relay worker identity.
+
+    The relay registers by the profile's id, not its username.
+    """
     entry = accounts.active()
     if not entry:
         return None
-    return {"username": entry["username"], "name": entry.get("name"),
+    worker_id = entry.get("id")
+    return {"worker_id": "" if worker_id is None else str(worker_id),
+            "username": entry["username"], "name": entry.get("name"),
             "token_hint": accounts.mask(entry.get("token"))}
 
 
@@ -282,8 +287,13 @@ class Handler(BaseHTTPRequestHandler):
             if not entry:
                 return self._json(200, {"ok": False,
                                         "error": "worker is not selected - choose an account with Use first"})
+            worker_id = entry.get("id")
+            if worker_id in (None, ""):
+                return self._json(200, {"ok": False,
+                                        "error": "this profile has no id - the relay registers by id, "
+                                                 "so edit the profile and set one"})
             try:
-                link = server_link.enrol(body.get("url", ""), entry["username"],
+                link = server_link.enrol(body.get("url", ""), str(worker_id),
                                          entry.get("name") or entry["username"],
                                          entry["token"])
             except server_link.ServerError as exc:

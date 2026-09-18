@@ -77,6 +77,9 @@ The handshake is the relay's own worker protocol:
 POST {base}/{workspace}/enrol   {worker_id, token, label}   -> 202 Accepted
 ```
 
+`worker_id` is the active profile's **id** (not its username), `token` is that
+profile's token, and `label` is its name. A profile with no id cannot connect.
+
 `202` means **pending, not connected**. The worker picks its own token and waits
 in the workspace's pending list until an operator approves it in the relay
 console. The card shows *Waiting for approval* with the worker id to approve, and
@@ -247,25 +250,28 @@ falling back to `git config user.email`, then to
 
 ## Saved accounts
 
-The account card keeps a list of GitHub accounts. **Add account** takes a name,
-id, token, username and email; **Use** switches to one in a click; **Forget**
-removes it. **Click an account** to open its profile, edit any field and save it
-again — leave the token blank there to keep the saved one.
+The account card keeps a list of profiles. **Add account** takes a name, id,
+token, username and email; **Use** selects one in a click; **Forget** removes it.
+**Click a profile** to open it, edit any field and save it again — leave the
+token blank there to keep the saved one.
 
-- The token is checked against GitHub before saving, and refused if it belongs
-  to a different username than the one entered. Blank name, id and email are
-  filled in from whatever the token reports.
-- **Use** runs `gh auth login --with-token`, so the whole program — pushing,
-  creating, deleting — acts as that account from then on. The token is re-checked
-  first, so a stale one cannot knock out a working login.
-- A saved account also supplies the **email**, which is the one thing GitHub will
-  not tell you about an account. Run with a saved account's username and the
-  history is rewritten to that account's real address rather than the
-  `noreply` one.
+What a profile is for, and what the token is **not**:
+
+- The **token is the relay worker password** — the secret the relay approves
+  together with the worker id. It is **not** a GitHub credential and is never
+  used to authenticate to GitHub. Any string is accepted and stored as entered.
+- **Use** only marks the profile active. It supplies the relay worker id and
+  token when you Connect, and the **username and email** that commits are
+  rewritten to. It does **not** sign you in to GitHub.
+- The account that actually pushes, creates and deletes is whoever is signed in
+  through the browser **Sign in** button — separate from these profiles.
+- Because nothing is derived from the token, the **username is required**; blank
+  name, id and email fall back to the username (email to
+  `<username>@users.noreply.github.com`).
 
 The tokens live in `accounts.json` next to the program: mode `0600`, gitignored,
 and never sent to the browser — the page only ever sees `...4OHJ`. Anyone who can
-read that file can act as those accounts, so treat it like any other credential
+read that file can act as those profiles, so treat it like any other credential
 file, and use **Forget** to remove one.
 
 ```bash

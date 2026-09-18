@@ -136,9 +136,10 @@
       <label for="a_token">Token</label>
       <input type="password" id="a_token" placeholder="ghp_... or gho_..." autocomplete="off">
       <p class="hint" id="a_tokenhint" hidden>Leave blank to keep the saved token.</p>
-      <p class="hint">Checked against GitHub before saving. Stored on this machine only, in
+      <p class="hint">The token is stored as entered and not checked against GitHub, so any
+        token works. Username is required. Stored on this machine only, in
         <code>accounts.json</code> (0600, gitignored), and never sent back to this page.
-        Blank name, id or email are filled in from the token.</p>
+        Blank name, id or email fall back to the username.</p>
       <div class="controls">
         <button class="primary" id="saveaccount">Save account</button>
         <button id="cancelaccount">Cancel</button>
@@ -371,15 +372,18 @@ $("disconnectserver").onclick = () => {
 
 function applyWorker(worker) {
   const have = !!worker;
-  $("workerid").value = have ? worker.username : "";
+  const hasId = have && worker.worker_id;
+  $("workerid").value = hasId ? worker.worker_id : "";
   $("workertoken").value = have ? worker.token_hint : "";
   $("username").value = have ? worker.username : "";
-  $("doconnect").disabled = !have;
-  $("workerhint").innerHTML = have
-    ? `Enrols as <b>${worker.username}</b> with that account's saved token (shown masked;
-       the token itself is sent from this machine, not from this page).`
-    : `<span class="m-bad">Worker is not selected.</span> Choose an account above with
-       <b>Use</b> first.`;
+  $("doconnect").disabled = !hasId;
+  $("workerhint").innerHTML = !have
+    ? `<span class="m-bad">Worker is not selected.</span> Choose an account above with <b>Use</b> first.`
+    : (!hasId
+      ? `<span class="m-bad">This profile has no id.</span> The relay registers by id — edit the
+         profile above and set one.`
+      : `Registers with id <b>${worker.worker_id}</b> and that profile's saved token (shown masked;
+         the token is sent from this machine, not from this page).`);
   $("usernamehint").innerHTML = have
     ? `The account currently in use. Its name and address replace every contributor in the history.`
     : `<span class="m-bad">No account selected.</span> Choose one above with <b>Use</b>.`;
