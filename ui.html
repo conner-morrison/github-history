@@ -157,6 +157,7 @@
       </div>
       <p class="hint" id="authmsg"></p>
     </div>
+    <p class="hint m-bad" id="autherror" hidden></p>
   </div>
 
   <div class="card">
@@ -605,7 +606,12 @@ function render(data) {
     $("authmsg").textContent = auth.message || "";
     $("cancelauth").disabled = false;
   }
-  if (auth.state === "cancelled" && $("signin")) $("signin").disabled = false;
+  const failed = auth.state === "error";
+  $("autherror").hidden = !failed;
+  if (failed) $("autherror").textContent = auth.message || "Sign-in failed.";
+  // re-enable whatever the outcome: an errored flow used to leave this button
+  // stuck disabled when nobody was signed in yet, with no way back but a reload
+  if ($("signin")) $("signin").disabled = waiting;
 
   const st = run.state;
   $("phase").textContent = run.error ? "error" : (run.phase || st);

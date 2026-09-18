@@ -76,6 +76,12 @@ def _auth_status():
 LOGIN_CMD = ["gh", "auth", "login", "--hostname", "github.com", "--web", "--git-protocol", "https"]
 GRANT_DELETE_CMD = ["gh", "auth", "refresh", "--hostname", "github.com", "-s", "delete_repo"]
 
+# gh has worded this line differently across versions -- "First copy your one-time
+# code: A1B2-C3D4" in older builds, "One-time code (A1B2-C3D4) copied to clipboard"
+# in 2.101. Anchor on the phrase, then take the code whatever punctuation separates
+# them, so a future rewording of the separator does not blank the page again.
+CODE_RE = re.compile(r"one-time code\D{0,4}([A-Z0-9]{4}-[A-Z0-9]{4})", re.I)
+
 
 def start_gh_flow(cmd, opening):
     """Run a gh browser flow and surface its one-time code to the page."""
@@ -94,36 +100,63 @@ def start_gh_flow(cmd, opening):
         STATE["auth"] = {"state": "waiting", "code": None, "url": None, "message": opening}
         STATE["auth_proc"] = None
 
+    def fail(message):
+        """Surface a flow that died before gh could report anything itself."""
+        with LOCK:
+            if gen != STATE["auth_gen"]:
+                return                        # superseded: do not touch the new flow
+            if STATE["auth"]["state"] == "cancelled":
+                return                        # the user backed out
+            STATE["auth_proc"] = None
+            STATE["auth"] = {"state": "error", "code": None, "url": None,
+                             "message": message}
+
     def worker():
         env = dict(os.environ, BROWSER="true")  # the page shows the link instead
-        proc = subprocess.Popen(
-            cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, env=env, start_new_session=True,  # own group, so cancel can signal it
-            bufsize=1,  # line-buffered
-        )
+        try:
+            proc = subprocess.Popen(
+                cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                text=True, env=env, start_new_session=True,  # own group, so cancel can signal it
+                bufsize=1,  # line-buffered
+            )
+        except OSError as exc:
+            # gh missing from PATH raised FileNotFoundError straight out of this
+            # daemon thread, which died silently and stranded the page on "...."
+            # with nothing to explain it. Report it instead.
+            fail(f"could not run {cmd[0]}: {exc.strerror or exc}. "
+                 f"Is {cmd[0]} installed and on this server's PATH?")
+            return
         with LOCK:
             if gen != STATE["auth_gen"]:      # already superseded before we spawned
                 pass
             else:
                 STATE["auth_proc"] = proc
-        # readline yields each line as gh prints it; `for line in proc.stdout`
-        # can withhold lines in a read-ahead buffer while gh blocks on the
-        # browser step, which would hide the one-time code
-        for line in iter(proc.stdout.readline, ""):
-            line = line.strip()
-            if not line:
-                continue
-            code = re.search(r"one-time code:\s*([A-Z0-9-]+)", line)
-            url = re.search(r"(https://\S+)", line)
-            with LOCK:
-                if gen != STATE["auth_gen"]:
-                    break                     # a newer flow owns the state now
-                if code:
-                    STATE["auth"]["code"] = code.group(1)
-                if url:
-                    STATE["auth"]["url"] = url.group(1)
-                STATE["auth"]["message"] = line
-        proc.wait()
+        try:
+            # readline yields each line as gh prints it; `for line in proc.stdout`
+            # can withhold lines in a read-ahead buffer while gh blocks on the
+            # browser step, which would hide the one-time code
+            for line in iter(proc.stdout.readline, ""):
+                line = line.strip()
+                if not line:
+                    continue
+                code = CODE_RE.search(line)
+                url = re.search(r"(https://\S+)", line)
+                with LOCK:
+                    if gen != STATE["auth_gen"]:
+                        break                 # a newer flow owns the state now
+                    if code:
+                        STATE["auth"]["code"] = code.group(1)
+                    if url:
+                        STATE["auth"]["url"] = url.group(1)
+                    STATE["auth"]["message"] = line
+            proc.wait()
+        except Exception as exc:              # never leave the page waiting forever
+            fail(f"{cmd[0]} flow failed: {exc}")
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+            return
         with LOCK:
             if gen != STATE["auth_gen"]:
                 return                        # superseded: do not touch the new flow
