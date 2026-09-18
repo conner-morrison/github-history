@@ -33,7 +33,7 @@ PAGE = (Path(__file__).resolve().parent / "ui.html").read_text(encoding="utf-8")
 DEFAULT_PORT = 8765
 SWEEP_STOP = threading.Event()
 STATE = {"run": None, "auth": {"state": "idle", "code": None, "url": None, "message": ""},
-         "auth_proc": None, "runner": None}
+         "auth_proc": None, "auth_gen": 0, "runner": None}
 LOCK = threading.Lock()
 
 
@@ -79,26 +79,45 @@ GRANT_DELETE_CMD = ["gh", "auth", "refresh", "--hostname", "github.com", "-s", "
 
 def start_gh_flow(cmd, opening):
     """Run a gh browser flow and surface its one-time code to the page."""
+    # a re-click restarts: stop any flow still waiting rather than no-op, so a
+    # stuck "...." can always be retried. Each flow gets a generation number so
+    # a superseded worker cannot clobber the new one's state.
     with LOCK:
-        if STATE["auth"]["state"] == "waiting":
-            return
+        if STATE["auth"]["state"] == "waiting" and STATE["auth_proc"] is not None:
+            proc = STATE["auth_proc"]
+            try:
+                os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError):
+                pass
+        STATE["auth_gen"] += 1
+        gen = STATE["auth_gen"]
         STATE["auth"] = {"state": "waiting", "code": None, "url": None, "message": opening}
+        STATE["auth_proc"] = None
 
     def worker():
         env = dict(os.environ, BROWSER="true")  # the page shows the link instead
         proc = subprocess.Popen(
             cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, env=env, start_new_session=True,  # own group, so cancel can signal it
+            bufsize=1,  # line-buffered
         )
         with LOCK:
-            STATE["auth_proc"] = proc
-        for line in proc.stdout:
+            if gen != STATE["auth_gen"]:      # already superseded before we spawned
+                pass
+            else:
+                STATE["auth_proc"] = proc
+        # readline yields each line as gh prints it; `for line in proc.stdout`
+        # can withhold lines in a read-ahead buffer while gh blocks on the
+        # browser step, which would hide the one-time code
+        for line in iter(proc.stdout.readline, ""):
             line = line.strip()
             if not line:
                 continue
             code = re.search(r"one-time code:\s*([A-Z0-9-]+)", line)
             url = re.search(r"(https://\S+)", line)
             with LOCK:
+                if gen != STATE["auth_gen"]:
+                    break                     # a newer flow owns the state now
                 if code:
                     STATE["auth"]["code"] = code.group(1)
                 if url:
@@ -106,9 +125,11 @@ def start_gh_flow(cmd, opening):
                 STATE["auth"]["message"] = line
         proc.wait()
         with LOCK:
+            if gen != STATE["auth_gen"]:
+                return                        # superseded: do not touch the new flow
             STATE["auth_proc"] = None
             if STATE["auth"]["state"] == "cancelled":
-                return  # the user backed out; leave that as the outcome
+                return                        # the user backed out
             STATE["auth"]["state"] = "done" if proc.returncode == 0 else "error"
             if proc.returncode != 0:
                 STATE["auth"]["message"] = f"gh exited with {proc.returncode}"
